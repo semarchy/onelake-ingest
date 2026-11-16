@@ -78,8 +78,8 @@ different servers. The full sequence, including the failure paths and the waterm
 
 | Component | Requirement |
 |---|---|
-| Semarchy Data Platform | 2025.1, with its repository and data location on Azure Database for PostgreSQL – Flexible Server |
-| PostgreSQL | 16 (validated) |
+| Semarchy Data Platform | 2025.1, with its repository and data location on Azure Database for PostgreSQL |
+| PostgreSQL | 16 (validated). The pipeline uses ordinary database connections, not Fabric mirroring, so mirroring's server type and tier requirements do not apply. |
 | Microsoft Fabric | A workspace on a capacity; the source Lakehouse with its SQL analytics endpoint |
 | Networking | A Fabric VNet data gateway that reaches the Postgres servers on port 5432 |
 | Source data | A publisher code, a source record ID, the attributes, and a UTC "last updated" timestamp per row |
