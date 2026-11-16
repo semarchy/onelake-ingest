@@ -20,6 +20,46 @@ keyed by load ID, publisher and source ID.
 
 ## The run, step by step
 
+Which component the pipeline talks to at each step (the components themselves are drawn in the
+[README](../README.md)):
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant P as Data Pipeline
+  participant E as Lakehouse SQL endpoint
+  participant H as Data location DB
+  participant R as Repository DB
+  participant S as SDP engine
+
+  P->>H: GetWatermark from fabric_ctl.watermarks
+  H-->>P: last loaded timestamp (1900-01-01 if none)
+  P->>R: get_new_loadid(dataLocation, ...)
+  R-->>P: load ID, load is RUNNING
+  P->>E: select ... where watermarkColumn > watermark
+  E-->>P: new or changed rows
+  P->>H: copy into SD_[entity] with b_loadid, b_classname
+  P->>H: BlankToNull: empty strings become NULL
+  alt rows were copied
+    P->>R: submit_load(load ID, integration job)
+    R->>S: queue an integration batch
+    R-->>P: batch ID
+    loop every 15 s until the batch finishes
+      P->>R: read status from mta_integ_batch
+      S-->>R: RUNNING, then DONE, WARNING, ERROR or SUSPENDED
+    end
+  else nothing new
+    P->>R: cancel_load(load ID)
+    Note over P: status NO_BATCH
+  end
+  alt DONE, WARNING or NO_BATCH
+    P->>H: UpdateWatermark to the latest timestamp loaded (never backwards)
+  else ERROR, CANCELED or SUSPENDED
+    Note over P: run fails, watermark unchanged, next run retries
+  end
+  Note over P,R: If the copy, BlankToNull or submit fails: cancel_load(load ID), then fail the run
+```
+
 | Step | Connection | What it does |
 |---|---|---|
 | GetWatermark | hub | Reads the entity's last loaded timestamp from `fabric_ctl.watermarks` (1900-01-01 if none). |
