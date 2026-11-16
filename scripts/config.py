@@ -56,7 +56,23 @@ def load(path):
                     raise ConfigError(f"pipeline {p['name']}: not a plain identifier: {name}")
         if not any(c["source"] == p["watermarkColumn"] for c in p["columns"]):
             raise ConfigError(f"pipeline {p['name']}: watermarkColumn {p['watermarkColumn']} must be one of the mapped columns")
+        # The template puts these inside quoted SQL identifiers ("..." in Postgres, [...] in T-SQL).
+        for key in ("sourceSchema", "sourceTable", "sdTable", "publisherIdColumn", "sourceIdColumn"):
+            _no_quotes(f"pipeline {p['name']}: {key}", p[key], '"[]\'')
+        _no_quotes(f"pipeline {p['name']}: className", p["className"], "'")
+    # ... and these inside quoted identifiers or SQL string literals.
+    _no_quotes("semarchy.repositorySchema", cfg["semarchy"]["repositorySchema"], '"\'')
+    for key in ("schema", "table"):
+        _no_quotes(f"watermark.{key}", cfg["watermark"][key], '"\'')
+    for key in ("dataLocation", "integrationJob", "sdpUser"):
+        _no_quotes(f"semarchy.{key}", cfg["semarchy"][key], "'")
     return cfg
+
+
+def _no_quotes(label, value, forbidden):
+    bad = [ch for ch in forbidden if ch in value]
+    if bad:
+        raise ConfigError(f"{label}: must not contain {' '.join(bad)} (got {value!r})")
 
 
 def pipeline(cfg, name=None):
