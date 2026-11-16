@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Documentation reorganised: the README is now a product overview (capabilities, requirements,
+  getting started, compatibility, security, support). Installation moved to
+  `docs/setup-guide.md`, symptoms and fixes to `docs/troubleshooting.md`. No functional changes.
+
 ## 0.2.0 — 2026-11-16
 
 - Diagrams: the components and connections (README) and the sequence of one run, including the
