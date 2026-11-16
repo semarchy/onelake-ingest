@@ -1,0 +1,53 @@
+{
+  "_comment": "Copy to environments/<name>.json and fill in. No secrets in this file: passwords are read from the environment variables named in passwordEnv. See README.md for where each value comes from.",
+  "fabric": {
+    "workspace": "<Fabric workspace name or ID that will hold the pipeline>",
+    "gateway": "<VNet data gateway name or ID>",
+    "lakehouse": "<source Lakehouse name>",
+    "lakehouseWorkspace": "<optional: the Lakehouse's workspace, if different>"
+  },
+  "connections": {
+    "hub": {
+      "name": "pg-semarchy-hub",
+      "server": "<data location server>.postgres.database.azure.com",
+      "database": "<data location database>",
+      "username": "fabric_loader",
+      "passwordEnv": "HUB_DB_PASSWORD"
+    },
+    "repo": {
+      "name": "pg-semarchy-repo",
+      "server": "<repository server>.postgres.database.azure.com",
+      "database": "<repository database>",
+      "username": "fabric_loader",
+      "passwordEnv": "REPO_DB_PASSWORD"
+    }
+  },
+  "semarchy": {
+    "dataLocation": "<data location NAME, not its label>",
+    "integrationJob": "INGEST_ALL",
+    "repositorySchema": "<schema that holds get_new_loadid = the repository login role>",
+    "sdpUser": "<SDP user recorded as the load creator>"
+  },
+  "watermark": {
+    "schema": "fabric_ctl",
+    "table": "watermarks"
+  },
+  "pipelines": [
+    {
+      "name": "OneLakeToSemarchy_Customer",
+      "className": "Customer",
+      "sourceSchema": "dbo",
+      "sourceTable": "customers",
+      "sdTable": "public.sd_customer",
+      "watermarkColumn": "LastUpdated",
+      "publisherIdColumn": "PublisherID",
+      "sourceIdColumn": "SourceID",
+      "columns": [
+        {"source": "CustomerName", "target": "customername"},
+        {"source": "LastUpdated", "target": "lastupdated", "type": "timestamp"},
+        {"source": "PublisherID_ParentCustomer", "target": "fp_parent_customer"},
+        {"source": "SourceID_ParentCustomer", "target": "fs_parent_customer"}
+      ]
+    }
+  ]
+}

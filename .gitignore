@@ -1,0 +1,17 @@
+# Environment files hold a deployment's hostnames, workspace and user names. Only the blank
+# template is shared; every real environment (including Semarchy's own) stays local.
+environments/*
+!environments/example.json
+
+# Generated pipeline definitions (scripts/deploy_pipeline.py writes them here)
+build/
+
+# Never commit credentials
+*.pw
+*.password
+.env
+.env.*
+
+__pycache__/
+*.pyc
+.DS_Store
