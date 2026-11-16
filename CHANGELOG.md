@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 — 2026-11-16
 
 - Documentation reorganised: the README is now a product overview (capabilities, requirements,
   getting started, compatibility, security, support). Installation moved to
