@@ -96,8 +96,8 @@ Why some steps are built the way they are:
 - **Strictly greater than.** A row whose timestamp equals the watermark is not reloaded, so a row
   that arrives late carrying the same timestamp as the last loaded one would be missed. With
   per-second "last updated" timestamps this is rare. If the source cannot rule it out, change `>`
-  to `>=` in `scripts/pipeline_builder.py`: boundary rows are then reloaded every run, which is
-  harmless because the same source IDs update the same records.
+  to `>=` in the CopyToSD query of `pipeline/pipeline-content.template.json`: boundary rows are then
+  reloaded every run, which is harmless because the same source IDs update the same records.
 - **UTC throughout.** Lakehouse timestamps are UTC; the copy stores them in SD without a zone; the
   watermark is a `timestamptz` compared as UTC.
 - **Fractional seconds are dropped** when the Lookup returns the watermark. That only moves it
@@ -105,6 +105,43 @@ Why some steps are built the way they are:
 - **SQL endpoint lag.** The endpoint reflects Lakehouse writes after a short delay. A run that
   starts right after a write can miss the newest rows; the next run picks them up, because the
   watermark only advances to what was loaded.
+
+## Changing the pipeline
+
+The pipeline is `pipeline/pipeline-content.template.json`: the complete Fabric Data Pipeline
+definition (the `pipeline-content.json` part of a Fabric item), with tokens where a value depends
+on the environment. `scripts/pipeline_builder.py` only fills in the tokens; it contains no pipeline
+logic. To change what the pipeline does (a query, a timeout, the polling interval, a new activity),
+edit the template, then check and publish:
+
+```bash
+python scripts/deploy_pipeline.py -e environments/<name>.json --dry-run   # renders into build/
+python scripts/deploy_pipeline.py -e environments/<name>.json
+```
+
+The render fails if the template uses a token the renderer does not know, or leaves one unfilled.
+
+Prototyping in the Fabric UI works too: edit a deployed pipeline there, download its definition
+(`POST /v1/workspaces/{ws}/items/{id}/getDefinition`, part `pipeline-content.json`), and carry the
+change back into the template, putting tokens back where the environment's values appear.
+
+Tokens. `{{NAME}}` sits inside a JSON string and is replaced by the value, escaped; `"{{JSON:NAME}}"`
+is replaced, quotes included, by a JSON value.
+
+| Token | Value |
+|---|---|
+| `HUB_CONNECTION_ID`, `REPO_CONNECTION_ID` | IDs of the connections named in the environment file, looked up in Fabric |
+| `LAKEHOUSE_NAME`, `LAKEHOUSE_WORKSPACE_ID`, `SQL_ENDPOINT_ID`, `SQL_ENDPOINT_HOST` | the source Lakehouse and its SQL analytics endpoint, looked up in Fabric |
+| `DATA_LOCATION`, `INTEGRATION_JOB`, `SDP_USER` | `semarchy` section (pipeline parameter defaults) |
+| `REPO_SCHEMA` | `semarchy.repositorySchema` (the template quotes it) |
+| `WATERMARK_SCHEMA`, `WATERMARK_TABLE` | `watermark` section |
+| `CLASS_NAME`, `SOURCE_SCHEMA`, `SOURCE_TABLE`, `WATERMARK_COLUMN` | the pipeline entry (parameter defaults) |
+| `SD_SCHEMA`, `SD_TABLE` | the pipeline entry's `sdTable`, split |
+| `WATERMARK_SD_COLUMN` | the SD column `watermarkColumn` maps to |
+| `SOURCE_COLUMNS` | the Lakehouse columns to select, in T-SQL brackets |
+| `BLANK_TO_NULL_SET` | the `SET` list that turns empty strings into NULL in the text columns |
+| `JSON:COPY_MAPPINGS` | the Copy activity's column mapping |
+| `DESCRIPTION` | the pipeline description |
 
 ## What has been tested
 

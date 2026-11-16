@@ -40,9 +40,10 @@ Both connections go through the Fabric VNet data gateway; the two databases can 
 servers. The order of a run, including the empty-run and failure branches, is in
 [docs/how-it-works.md](docs/how-it-works.md#the-run-step-by-step).
 
-Everything is generated from one environment file: the database setup scripts take their values
-from it, and the pipeline is built from it and published through the Fabric REST API. Nothing is
-edited by hand in the Fabric UI.
+The pipeline is a Fabric pipeline definition kept in this repository as a template,
+[pipeline/pipeline-content.template.json](pipeline/pipeline-content.template.json). One environment
+file fills in its connections, tables and column mapping, and the result is published through the
+Fabric REST API. The database setup scripts take their values from the same file.
 
 How the pipeline works, and why it is built this way: [docs/how-it-works.md](docs/how-it-works.md).
 
@@ -63,6 +64,7 @@ How the pipeline works, and why it is built this way: [docs/how-it-works.md](doc
 ## Layout
 
 ```
+pipeline/pipeline-content.template.json   the pipeline: Fabric definition with {{TOKENS}}
 environments/example.json      template for an environment file (copy it; real ones are gitignored)
 sql/01_create_loader_role.sql  create the fabric_loader login           (both servers, as admin)
 sql/02_hub_watermarks.sql      create the watermark table               (data location database)
@@ -71,7 +73,7 @@ sql/04_repo_grants.sql         let fabric_loader call the load API      (reposit
 sql/05_hub_seed_watermark.sql  optional: skip history already loaded    (data location database)
 sql/check/                     dry runs, post-setup checks, post-run verification
 scripts/create_connections.py  create the two Fabric connections on the gateway
-scripts/deploy_pipeline.py     build the pipeline from the environment file and publish it
+scripts/deploy_pipeline.py     fill in the template from the environment file and publish it
 scripts/run_pipeline.py        run it now and print every step's result
 scripts/psql_in_cluster.sh     run the SQL scripts from inside AKS when the servers are private
 ```
@@ -168,7 +170,9 @@ python scripts/deploy_pipeline.py -e environments/<name>.json
 ```
 
 Creates the pipeline, or replaces its definition if it exists. Redeploy after any change to the
-environment file. Do not edit the pipeline in the Fabric UI: the next deploy overwrites it.
+environment file or the template. Changes made only in the Fabric UI are overwritten by the next
+deploy: to change what the pipeline does, edit the template (see
+[Changing the pipeline](docs/how-it-works.md#changing-the-pipeline)).
 
 ### 6. Run and verify
 

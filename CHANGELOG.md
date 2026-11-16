@@ -4,6 +4,10 @@
 
 - Diagrams: the components and connections (README) and the sequence of one run, including the
   empty-run and failure branches (docs/how-it-works.md). Mermaid, rendered by GitHub.
+- The pipeline is now a template, `pipeline/pipeline-content.template.json`, instead of Python code.
+  `scripts/pipeline_builder.py` only fills in its tokens. The deployed pipeline is unchanged apart
+  from its description; no redeploy needed. The environment file is now also checked for quote
+  characters in names the pipeline puts inside SQL.
 
 ## 0.1.0 — 2026-11-16
 

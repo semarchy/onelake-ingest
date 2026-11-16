@@ -1,0 +1,743 @@
+{
+  "properties": {
+    "description": "{{DESCRIPTION}}",
+    "activities": [
+      {
+        "name": "GetWatermark",
+        "type": "Lookup",
+        "dependsOn": [],
+        "policy": {
+          "timeout": "0.00:30:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "source": {
+            "type": "AzurePostgreSqlSource",
+            "query": {
+              "value": "select to_char(coalesce((select last_value from \"{{WATERMARK_SCHEMA}}\".\"{{WATERMARK_TABLE}}\" where entity = '@{pipeline().parameters.className}'), timestamptz '1900-01-01 00:00:00+00') at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') as watermark",
+              "type": "Expression"
+            }
+          },
+          "datasetSettings": {
+            "annotations": [],
+            "type": "AzurePostgreSqlTable",
+            "schema": [],
+            "typeProperties": {},
+            "externalReferences": {
+              "connection": "{{HUB_CONNECTION_ID}}"
+            }
+          },
+          "firstRowOnly": true
+        }
+      },
+      {
+        "name": "SetWatermark",
+        "type": "SetVariable",
+        "dependsOn": [
+          {
+            "activity": "GetWatermark",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "variableName": "watermark",
+          "value": {
+            "value": "@activity('GetWatermark').output.firstRow.watermark",
+            "type": "Expression"
+          }
+        }
+      },
+      {
+        "name": "GetLoadId",
+        "type": "Lookup",
+        "dependsOn": [
+          {
+            "activity": "SetWatermark",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.00:30:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "source": {
+            "type": "AzurePostgreSqlSource",
+            "query": {
+              "value": "select \"{{REPO_SCHEMA}}\".get_new_loadid('@{pipeline().parameters.dataLocation}', '@{pipeline().Pipeline}', 'Fabric load of @{pipeline().parameters.sourceTable} after @{variables('watermark')}', '@{pipeline().parameters.sdpUser}')::bigint as load_id",
+              "type": "Expression"
+            }
+          },
+          "datasetSettings": {
+            "annotations": [],
+            "type": "AzurePostgreSqlTable",
+            "schema": [],
+            "typeProperties": {},
+            "externalReferences": {
+              "connection": "{{REPO_CONNECTION_ID}}"
+            }
+          },
+          "firstRowOnly": true
+        }
+      },
+      {
+        "name": "SetLoadId",
+        "type": "SetVariable",
+        "dependsOn": [
+          {
+            "activity": "GetLoadId",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "variableName": "loadId",
+          "value": {
+            "value": "@string(activity('GetLoadId').output.firstRow.load_id)",
+            "type": "Expression"
+          }
+        }
+      },
+      {
+        "name": "CopyToSD",
+        "type": "Copy",
+        "dependsOn": [
+          {
+            "activity": "SetLoadId",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.00:30:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "source": {
+            "type": "DataWarehouseSource",
+            "queryTimeout": "02:00:00",
+            "partitionOption": "None",
+            "sqlReaderQuery": {
+              "value": "select {{SOURCE_COLUMNS}}, cast(@{variables('loadId')} as bigint) as b_loadid, '@{pipeline().parameters.className}' as b_classname from [@{pipeline().parameters.sourceSchema}].[@{pipeline().parameters.sourceTable}] where [@{pipeline().parameters.watermarkColumn}] > cast('@{variables('watermark')}' as datetime2(6))",
+              "type": "Expression"
+            },
+            "datasetSettings": {
+              "annotations": [],
+              "type": "DataWarehouseTable",
+              "schema": [],
+              "linkedService": {
+                "name": "{{LAKEHOUSE_NAME}}",
+                "properties": {
+                  "annotations": [],
+                  "type": "DataWarehouse",
+                  "typeProperties": {
+                    "endpoint": "{{SQL_ENDPOINT_HOST}}",
+                    "artifactId": "{{SQL_ENDPOINT_ID}}",
+                    "workspaceId": "{{LAKEHOUSE_WORKSPACE_ID}}"
+                  }
+                }
+              }
+            }
+          },
+          "sink": {
+            "type": "AzurePostgreSqlSink",
+            "writeMethod": "CopyCommand",
+            "datasetSettings": {
+              "annotations": [],
+              "type": "AzurePostgreSqlTable",
+              "schema": [],
+              "typeProperties": {
+                "schema": "{{SD_SCHEMA}}",
+                "table": "{{SD_TABLE}}"
+              },
+              "externalReferences": {
+                "connection": "{{HUB_CONNECTION_ID}}"
+              }
+            }
+          },
+          "translator": {
+            "type": "TabularTranslator",
+            "typeConversion": true,
+            "typeConversionSettings": {
+              "allowDataTruncation": false,
+              "treatBooleanAsNumber": false
+            },
+            "mappings": "{{JSON:COPY_MAPPINGS}}"
+          },
+          "enableStaging": false
+        }
+      },
+      {
+        "name": "BlankToNull",
+        "type": "Lookup",
+        "dependsOn": [
+          {
+            "activity": "CopyToSD",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.00:30:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "source": {
+            "type": "AzurePostgreSqlSource",
+            "query": {
+              "value": "with u as (update \"{{SD_SCHEMA}}\".\"{{SD_TABLE}}\" set {{BLANK_TO_NULL_SET}} where b_loadid = @{variables('loadId')} returning 1) select count(*) as rows_in_load from u",
+              "type": "Expression"
+            }
+          },
+          "datasetSettings": {
+            "annotations": [],
+            "type": "AzurePostgreSqlTable",
+            "schema": [],
+            "typeProperties": {},
+            "externalReferences": {
+              "connection": "{{HUB_CONNECTION_ID}}"
+            }
+          },
+          "firstRowOnly": true
+        }
+      },
+      {
+        "name": "HasNewRows",
+        "type": "IfCondition",
+        "dependsOn": [
+          {
+            "activity": "BlankToNull",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "expression": {
+            "value": "@greater(int(coalesce(activity('CopyToSD').output.rowsCopied, 0)), 0)",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "name": "SubmitLoad",
+              "type": "Lookup",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.00:30:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "AzurePostgreSqlSource",
+                  "query": {
+                    "value": "select \"{{REPO_SCHEMA}}\".submit_load(@{variables('loadId')}, '@{pipeline().parameters.integrationJob}', '@{pipeline().parameters.sdpUser}')::bigint as batch_id",
+                    "type": "Expression"
+                  }
+                },
+                "datasetSettings": {
+                  "annotations": [],
+                  "type": "AzurePostgreSqlTable",
+                  "schema": [],
+                  "typeProperties": {},
+                  "externalReferences": {
+                    "connection": "{{REPO_CONNECTION_ID}}"
+                  }
+                },
+                "firstRowOnly": true
+              }
+            },
+            {
+              "name": "SetBatchId",
+              "type": "SetVariable",
+              "dependsOn": [
+                {
+                  "activity": "SubmitLoad",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "policy": {
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "variableName": "batchId",
+                "value": {
+                  "value": "@string(activity('SubmitLoad').output.firstRow.batch_id)",
+                  "type": "Expression"
+                }
+              }
+            },
+            {
+              "name": "CancelLoad3",
+              "type": "Lookup",
+              "dependsOn": [
+                {
+                  "activity": "SubmitLoad",
+                  "dependencyConditions": [
+                    "Failed"
+                  ]
+                }
+              ],
+              "policy": {
+                "timeout": "0.00:30:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "AzurePostgreSqlSource",
+                  "query": {
+                    "value": "select count(*) as canceled from (select \"{{REPO_SCHEMA}}\".cancel_load(@{variables('loadId')}, '@{pipeline().parameters.sdpUser}')) c",
+                    "type": "Expression"
+                  }
+                },
+                "datasetSettings": {
+                  "annotations": [],
+                  "type": "AzurePostgreSqlTable",
+                  "schema": [],
+                  "typeProperties": {},
+                  "externalReferences": {
+                    "connection": "{{REPO_CONNECTION_ID}}"
+                  }
+                },
+                "firstRowOnly": true
+              }
+            },
+            {
+              "name": "FailAfterCancel3",
+              "type": "Fail",
+              "dependsOn": [
+                {
+                  "activity": "CancelLoad3",
+                  "dependencyConditions": [
+                    "Succeeded",
+                    "Failed"
+                  ]
+                }
+              ],
+              "typeProperties": {
+                "message": {
+                  "value": "SubmitLoad failed; load @{variables('loadId')} was cancelled.",
+                  "type": "Expression"
+                },
+                "errorCode": "SDP_LOAD_CANCELLED"
+              }
+            }
+          ],
+          "ifFalseActivities": [
+            {
+              "name": "CancelEmptyLoad",
+              "type": "Lookup",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.00:30:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "AzurePostgreSqlSource",
+                  "query": {
+                    "value": "select count(*) as canceled from (select \"{{REPO_SCHEMA}}\".cancel_load(@{variables('loadId')}, '@{pipeline().parameters.sdpUser}')) c",
+                    "type": "Expression"
+                  }
+                },
+                "datasetSettings": {
+                  "annotations": [],
+                  "type": "AzurePostgreSqlTable",
+                  "schema": [],
+                  "typeProperties": {},
+                  "externalReferences": {
+                    "connection": "{{REPO_CONNECTION_ID}}"
+                  }
+                },
+                "firstRowOnly": true
+              }
+            },
+            {
+              "name": "SetNoBatch",
+              "type": "SetVariable",
+              "dependsOn": [
+                {
+                  "activity": "CancelEmptyLoad",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "policy": {
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "variableName": "batchStatus",
+                "value": {
+                  "value": "NO_BATCH",
+                  "type": "Expression"
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "WaitForBatch",
+        "type": "Until",
+        "dependsOn": [
+          {
+            "activity": "HasNewRows",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "expression": {
+            "value": "@contains(createArray('DONE','WARNING','ERROR','CANCELED','SUSPENDED','NO_BATCH'), variables('batchStatus'))",
+            "type": "Expression"
+          },
+          "timeout": "0.01:00:00",
+          "activities": [
+            {
+              "name": "GetBatchStatus",
+              "type": "Lookup",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.00:30:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "AzurePostgreSqlSource",
+                  "query": {
+                    "value": "select coalesce((select status from \"{{REPO_SCHEMA}}\".mta_integ_batch where batchid = @{if(empty(variables('batchId')), '-1', variables('batchId'))}), 'NO_BATCH') as status",
+                    "type": "Expression"
+                  }
+                },
+                "datasetSettings": {
+                  "annotations": [],
+                  "type": "AzurePostgreSqlTable",
+                  "schema": [],
+                  "typeProperties": {},
+                  "externalReferences": {
+                    "connection": "{{REPO_CONNECTION_ID}}"
+                  }
+                },
+                "firstRowOnly": true
+              }
+            },
+            {
+              "name": "SetBatchStatus",
+              "type": "SetVariable",
+              "dependsOn": [
+                {
+                  "activity": "GetBatchStatus",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "policy": {
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "variableName": "batchStatus",
+                "value": {
+                  "value": "@activity('GetBatchStatus').output.firstRow.status",
+                  "type": "Expression"
+                }
+              }
+            },
+            {
+              "name": "Pause",
+              "type": "Wait",
+              "dependsOn": [
+                {
+                  "activity": "SetBatchStatus",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "typeProperties": {
+                "waitTimeInSeconds": {
+                  "value": "@if(equals(variables('batchStatus'), 'NO_BATCH'), 1, 15)",
+                  "type": "Expression"
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "BatchSucceeded",
+        "type": "IfCondition",
+        "dependsOn": [
+          {
+            "activity": "WaitForBatch",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "expression": {
+            "value": "@contains(createArray('DONE','WARNING','NO_BATCH'), variables('batchStatus'))",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "name": "UpdateWatermark",
+              "type": "Lookup",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.00:30:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "AzurePostgreSqlSource",
+                  "query": {
+                    "value": "with m as (select max(\"{{WATERMARK_SD_COLUMN}}\") at time zone 'UTC' as v from \"{{SD_SCHEMA}}\".\"{{SD_TABLE}}\" where b_loadid = @{variables('loadId')}), u as (insert into \"{{WATERMARK_SCHEMA}}\".\"{{WATERMARK_TABLE}}\" (entity, last_value, last_load_id) select '@{pipeline().parameters.className}', v, @{variables('loadId')} from m where v is not null on conflict (entity) do update set last_value = greatest(\"{{WATERMARK_SCHEMA}}\".\"{{WATERMARK_TABLE}}\".last_value, excluded.last_value), last_load_id = excluded.last_load_id, updated_at = now() returning last_value) select to_char(coalesce((select last_value from u), (select last_value from \"{{WATERMARK_SCHEMA}}\".\"{{WATERMARK_TABLE}}\" where entity = '@{pipeline().parameters.className}')) at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') as watermark, (select count(*) from u) as advanced",
+                    "type": "Expression"
+                  }
+                },
+                "datasetSettings": {
+                  "annotations": [],
+                  "type": "AzurePostgreSqlTable",
+                  "schema": [],
+                  "typeProperties": {},
+                  "externalReferences": {
+                    "connection": "{{HUB_CONNECTION_ID}}"
+                  }
+                },
+                "firstRowOnly": true
+              }
+            }
+          ],
+          "ifFalseActivities": [
+            {
+              "name": "FailBatch",
+              "type": "Fail",
+              "dependsOn": [],
+              "typeProperties": {
+                "message": {
+                  "value": "@concat('Integration batch ', variables('batchId'), ' ended in status ', variables('batchStatus'), '; watermark not advanced')",
+                  "type": "Expression"
+                },
+                "errorCode": "SDP_BATCH_FAILED"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "CancelLoad1",
+        "type": "Lookup",
+        "dependsOn": [
+          {
+            "activity": "CopyToSD",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.00:30:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "source": {
+            "type": "AzurePostgreSqlSource",
+            "query": {
+              "value": "select count(*) as canceled from (select \"{{REPO_SCHEMA}}\".cancel_load(@{variables('loadId')}, '@{pipeline().parameters.sdpUser}')) c",
+              "type": "Expression"
+            }
+          },
+          "datasetSettings": {
+            "annotations": [],
+            "type": "AzurePostgreSqlTable",
+            "schema": [],
+            "typeProperties": {},
+            "externalReferences": {
+              "connection": "{{REPO_CONNECTION_ID}}"
+            }
+          },
+          "firstRowOnly": true
+        }
+      },
+      {
+        "name": "FailAfterCancel1",
+        "type": "Fail",
+        "dependsOn": [
+          {
+            "activity": "CancelLoad1",
+            "dependencyConditions": [
+              "Succeeded",
+              "Failed"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "message": {
+            "value": "CopyToSD failed; load @{variables('loadId')} was cancelled.",
+            "type": "Expression"
+          },
+          "errorCode": "SDP_LOAD_CANCELLED"
+        }
+      },
+      {
+        "name": "CancelLoad2",
+        "type": "Lookup",
+        "dependsOn": [
+          {
+            "activity": "BlankToNull",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.00:30:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "source": {
+            "type": "AzurePostgreSqlSource",
+            "query": {
+              "value": "select count(*) as canceled from (select \"{{REPO_SCHEMA}}\".cancel_load(@{variables('loadId')}, '@{pipeline().parameters.sdpUser}')) c",
+              "type": "Expression"
+            }
+          },
+          "datasetSettings": {
+            "annotations": [],
+            "type": "AzurePostgreSqlTable",
+            "schema": [],
+            "typeProperties": {},
+            "externalReferences": {
+              "connection": "{{REPO_CONNECTION_ID}}"
+            }
+          },
+          "firstRowOnly": true
+        }
+      },
+      {
+        "name": "FailAfterCancel2",
+        "type": "Fail",
+        "dependsOn": [
+          {
+            "activity": "CancelLoad2",
+            "dependencyConditions": [
+              "Succeeded",
+              "Failed"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "message": {
+            "value": "BlankToNull failed; load @{variables('loadId')} was cancelled.",
+            "type": "Expression"
+          },
+          "errorCode": "SDP_LOAD_CANCELLED"
+        }
+      }
+    ],
+    "parameters": {
+      "dataLocation": {
+        "type": "string",
+        "defaultValue": "{{DATA_LOCATION}}"
+      },
+      "integrationJob": {
+        "type": "string",
+        "defaultValue": "{{INTEGRATION_JOB}}"
+      },
+      "className": {
+        "type": "string",
+        "defaultValue": "{{CLASS_NAME}}"
+      },
+      "sourceSchema": {
+        "type": "string",
+        "defaultValue": "{{SOURCE_SCHEMA}}"
+      },
+      "sourceTable": {
+        "type": "string",
+        "defaultValue": "{{SOURCE_TABLE}}"
+      },
+      "watermarkColumn": {
+        "type": "string",
+        "defaultValue": "{{WATERMARK_COLUMN}}"
+      },
+      "sdpUser": {
+        "type": "string",
+        "defaultValue": "{{SDP_USER}}"
+      }
+    },
+    "variables": {
+      "loadId": {
+        "type": "String"
+      },
+      "batchId": {
+        "type": "String"
+      },
+      "batchStatus": {
+        "type": "String",
+        "defaultValue": "PENDING"
+      },
+      "watermark": {
+        "type": "String"
+      }
+    },
+    "annotations": [
+      "onelake-to-semarchy"
+    ]
+  }
+}
