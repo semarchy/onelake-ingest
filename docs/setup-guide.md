@@ -18,7 +18,9 @@ spent collecting values and running the database setup with the right accounts.
 
 ## Before you start
 
-- **SDP on Azure Database for PostgreSQL – Flexible Server.**
+- **SDP on Azure Database for PostgreSQL.** PostgreSQL 16 is validated. The pipeline reads and
+  writes through ordinary database connections and does not use Fabric mirroring, so mirroring's
+  server type and compute tier requirements do not apply.
 - **Network access from Fabric to the Postgres servers**: a Fabric VNet data gateway whose subnet
   can reach the servers (private endpoint or VNet integration, port 5432).
 - **A Fabric workspace on a capacity** for the pipeline, and the source Lakehouse (same or another

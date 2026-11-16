@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 — 2026-11-16
 
 - Documentation reorganised: the README is now a product overview (capabilities, requirements,
   getting started, compatibility, security, support). Installation moved to
   `docs/setup-guide.md`, symptoms and fixes to `docs/troubleshooting.md`. No functional changes.
+- Requirements no longer name a PostgreSQL server type: the pipeline uses ordinary database
+  connections, not Fabric mirroring, so mirroring's server type and tier requirements do not apply.
 
 ## 0.2.0 — 2026-11-16
 
