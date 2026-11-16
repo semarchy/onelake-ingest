@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-11-16
 
 - Diagrams: the components and connections (README) and the sequence of one run, including the
   empty-run and failure branches (docs/how-it-works.md). Mermaid, rendered by GitHub.
